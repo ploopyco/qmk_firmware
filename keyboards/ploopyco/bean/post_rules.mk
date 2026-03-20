@@ -1,0 +1,5 @@
+VPATH += keyboards/ploopyco/common
+I2C_DRIVER_REQUIRED = yes
+POINTING_DEVICE_DRIVER = tmag5273axial
+CONSOLE_ENABLE = yes
+COMBO_ENABLE = yes

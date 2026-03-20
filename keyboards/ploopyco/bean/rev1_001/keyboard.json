@@ -1,0 +1,14 @@
+{
+    "usb": {
+        "device_version": "1.0.0"
+    },
+    "diode_direction": "COL2ROW",
+    "matrix_pins": {
+        "direct": [
+            ["GP23", // Bottom Left
+             "GP20", // Top Left
+             "GP6",  // Top Right
+             "GP24"] // Bottom Right
+        ]
+    }
+}

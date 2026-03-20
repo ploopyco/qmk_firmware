@@ -385,6 +385,10 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
 
 ```
 
+### TMAG5273 Axial Sensor
+
+This part is actually a general purpose magnetic field sensor; it can be used as a pointing device with the addition of a magnet whose field is axially parallel (and initially collinear) to the sensor Z axis. Moving the magnet axis away from the Z axis changes the field direction, allowing implementation of a Trackpoint-like nub stick.
+
 ### Custom Driver
 
 If you have a sensor type that isn't supported above, a custom option is available by adding the following to your `rules.mk`
