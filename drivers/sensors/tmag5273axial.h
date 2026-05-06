@@ -35,14 +35,6 @@
 #    define TMAG5273AXIAL_ONLINE_CAL_THRESH 1024
 #endif
 
-/* This divisor is used to adjust behaviour of the pointer, changing
-   the transfer function between raw pointer input and mouse output.
-   Making this number bigger will generally reduce sensitivty, and vice
-   versa. Note that the effects are non-linear, and may surprise you! */
-#ifndef MAGNITUDE_ISH_DIVISOR
-#    define MAGNITUDE_ISH_DIVISOR 18
-#endif
-
 /* There are four types of TMAG chips, all with different I2C addresses.
    These are listed below for discovery on the bus. */
 #define TMAG5273A1_I2C_ADDRESS (0x35 << 1)

@@ -31,8 +31,7 @@ const pointing_device_driver_t tmag5273axial_pointing_device_driver = {
 };
 
 // Virtual CPI variable, since the device itself doesn't have one.
-// N.B. Not actually used! Fixed sensitivity dicated by physical structure.
-uint16_t tmag5273axial_cpi = 0;
+uint16_t tmag5273axial_cpi = 1024;
 
 // The driver tracks sensor zero point drift during usage.
 int16_t x_zeropoint_calibration = 0;
@@ -40,10 +39,6 @@ int16_t y_zeropoint_calibration = 0;
 
 int16_t x_zeropoint_online_calibration = 0;
 int16_t y_zeropoint_online_calibration = 0;
-
-// To get higher resolution at low speeds, we slow down the reporting
-// rate as the input movement gets smaller.
-uint16_t report_delay_counter;
 
 bool tmag5273axial_init(void) {
     i2c_init();
@@ -94,18 +89,15 @@ bool tmag5273axial_init(void) {
     int32_t zero_calibration_accumulator_x = 0;
     int32_t zero_calibration_accumulator_y = 0;
 
-    uint8_t raw_x_data[2];
-    uint8_t raw_y_data[2];
 
+    uint8_t raw_xy_data[4];
     int16_t x_data = 0;
     int16_t y_data = 0;
 
     for( int i = 0; i < 256; i++ ) {
-        i2c_read_register(TMAG5273_AXIAL_I2C_ADDRESS, REG_X_MSB_RESULT, raw_x_data, 2, 100);
-        x_data = raw_x_data[1] + (raw_x_data[0] << 8);
-
-        i2c_read_register(TMAG5273_AXIAL_I2C_ADDRESS, REG_Y_MSB_RESULT, raw_y_data, 2, 100);
-        y_data = raw_y_data[1] + (raw_y_data[0] << 8);
+        i2c_read_register(TMAG5273_AXIAL_I2C_ADDRESS, REG_X_MSB_RESULT, raw_xy_data, 4, 100);
+        x_data = raw_xy_data[1] + (raw_xy_data[0] << 8);
+        y_data = raw_xy_data[3] + (raw_xy_data[2] << 8);
 
         zero_calibration_accumulator_x += x_data;
         zero_calibration_accumulator_y += y_data;
@@ -115,8 +107,6 @@ bool tmag5273axial_init(void) {
 
     x_zeropoint_calibration = zero_calibration_accumulator_x / 256;
     y_zeropoint_calibration = zero_calibration_accumulator_y / 256;
-
-    report_delay_counter = 1;
 
     return true;
 }
@@ -132,92 +122,64 @@ uint16_t tmag5273axial_get_cpi(void) {
 report_tmag5273axial_t tmag5273axial_read(void) {
     report_tmag5273axial_t report = {0};
 
-    // Adjust report rate dynamically based on data, time-domain output nonlinearity.
-    report_delay_counter--;
+    uint8_t raw_xy_data[4];
+    i2c_read_register(TMAG5273_AXIAL_I2C_ADDRESS, REG_X_MSB_RESULT, raw_xy_data, 4, 100);
+    int16_t raw_x_data16 = raw_xy_data[1] + (raw_xy_data[0] << 8);
+    int16_t raw_y_data16 = raw_xy_data[3] + (raw_xy_data[2] << 8);
 
-    if( report_delay_counter == 0 ) {
-        uint8_t raw_x_data[2];
-        i2c_read_register(TMAG5273_AXIAL_I2C_ADDRESS, REG_X_MSB_RESULT, raw_x_data, 2, 100);
-        int16_t raw_x_data16 = raw_x_data[1] + (raw_x_data[0] << 8);
+    // Online calibration drift adjustment if trackpoint is near neutral position
+    if( raw_x_data16 < (x_zeropoint_calibration + TMAG5273AXIAL_ONLINE_CAL_THRESH) &&
+        raw_x_data16 > (x_zeropoint_calibration - TMAG5273AXIAL_ONLINE_CAL_THRESH) &&
+        raw_y_data16 < (y_zeropoint_calibration + TMAG5273AXIAL_ONLINE_CAL_THRESH) &&
+        raw_y_data16 > (y_zeropoint_calibration - TMAG5273AXIAL_ONLINE_CAL_THRESH) ) {
 
-        uint8_t raw_y_data[2];
-        i2c_read_register(TMAG5273_AXIAL_I2C_ADDRESS, REG_Y_MSB_RESULT, raw_y_data, 2, 100);
-        int16_t raw_y_data16 = raw_y_data[1] + (raw_y_data[0] << 8);
-
-        // Online calibration drift adjustment if trackpoint is near neutral position
-        if( raw_x_data16 < (x_zeropoint_calibration + TMAG5273AXIAL_ONLINE_CAL_THRESH) &&
-            raw_x_data16 > (x_zeropoint_calibration - TMAG5273AXIAL_ONLINE_CAL_THRESH) &&
-            raw_y_data16 < (y_zeropoint_calibration + TMAG5273AXIAL_ONLINE_CAL_THRESH) &&
-            raw_y_data16 > (y_zeropoint_calibration - TMAG5273AXIAL_ONLINE_CAL_THRESH) ) {
-
-            // X Axis
-            if( raw_x_data16 > (x_zeropoint_calibration + x_zeropoint_online_calibration) ) {
-                x_zeropoint_online_calibration += 1;
-            }
-            else {
-                x_zeropoint_online_calibration -= 1;
-            }
-
-            // Cap online calibration so it doesn't run away.
-            if( x_zeropoint_online_calibration > TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
-                x_zeropoint_online_calibration = TMAG5273AXIAL_ONLINE_CAL_THRESH;
-            }
-            if( x_zeropoint_online_calibration < -TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
-                x_zeropoint_online_calibration = -TMAG5273AXIAL_ONLINE_CAL_THRESH;
-            }
-
-            // Y Axis
-            if( raw_y_data16 > (y_zeropoint_calibration + y_zeropoint_online_calibration) ) {
-                y_zeropoint_online_calibration += 1;
-            }
-            else {
-                y_zeropoint_online_calibration -= 1;
-            }
-
-            // Cap online calibration so it doesn't run away.
-            if( y_zeropoint_online_calibration > TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
-                y_zeropoint_online_calibration = TMAG5273AXIAL_ONLINE_CAL_THRESH;
-            }
-            if( y_zeropoint_online_calibration < -TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
-                y_zeropoint_online_calibration = -TMAG5273AXIAL_ONLINE_CAL_THRESH;
-            }
+        // X Axis
+        if( raw_x_data16 > (x_zeropoint_calibration + x_zeropoint_online_calibration) ) {
+            x_zeropoint_online_calibration += 1;
+        }
+        else {
+            x_zeropoint_online_calibration -= 1;
         }
 
-        // Scaling factor arbitrary; power of 2 (cheap) and approximately correct (based on sensor ADC range).
-        report.dx = (raw_x_data16 - x_zeropoint_calibration - x_zeropoint_online_calibration) / 512;
-        report.dy = (raw_y_data16 - y_zeropoint_calibration - y_zeropoint_online_calibration) / 512;
-
-        // For debugging.
-        //printf("x(r/c/a): %d %d %d\n", raw_x_data16, x_zeropoint_calibration + x_zeropoint_online_calibration, report.dx);
-        //printf("y(r/c/a): %d %d %d\n", raw_y_data16, y_zeropoint_calibration + y_zeropoint_online_calibration, report.dy);
-
-        // Calculate magnitude-dependent time-domain sensitivity scale factor.
-        int16_t magnitude_ish = sqrt(raw_x_data16 * raw_x_data16 + raw_y_data16 * raw_y_data16);
-        magnitude_ish /= MAGNITUDE_ISH_DIVISOR;
-
-        // Increase refresh rate as output gets larger.
-        int16_t calculated_report_delay_counter = 700 - magnitude_ish;
-
-        // Delays that are too long feel weird, so we cap them.
-        if( calculated_report_delay_counter > 600 ) {
-            calculated_report_delay_counter = 600;
+        // Cap online calibration so it doesn't run away.
+        if( x_zeropoint_online_calibration > TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
+            x_zeropoint_online_calibration = TMAG5273AXIAL_ONLINE_CAL_THRESH;
+        }
+        if( x_zeropoint_online_calibration < -TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
+            x_zeropoint_online_calibration = -TMAG5273AXIAL_ONLINE_CAL_THRESH;
         }
 
-        // The formula can produce invalid delay counter values, so bound that.
-        // Also, anything less is just too damn fast.
-        if( calculated_report_delay_counter < 100 ) {
-            calculated_report_delay_counter = 100;
+        // Y Axis
+        if( raw_y_data16 > (y_zeropoint_calibration + y_zeropoint_online_calibration) ) {
+            y_zeropoint_online_calibration += 1;
+        }
+        else {
+            y_zeropoint_online_calibration -= 1;
         }
 
-        report_delay_counter = calculated_report_delay_counter;
-
-        // For debugging.
-        //printf("delay: %d \n", report_delay_counter);
+        // Cap online calibration so it doesn't run away.
+        if( y_zeropoint_online_calibration > TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
+            y_zeropoint_online_calibration = TMAG5273AXIAL_ONLINE_CAL_THRESH;
+        }
+        if( y_zeropoint_online_calibration < -TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
+            y_zeropoint_online_calibration = -TMAG5273AXIAL_ONLINE_CAL_THRESH;
+        }
     }
-    else {
-        report.dx = 0;
-        report.dy = 0;
-    }
+
+    // Scale by configured CPI so the user has some control over the speed.
+    static int16_t carry_x = 0;
+    static int16_t carry_y = 0;
+    int32_t x = raw_x_data16 - x_zeropoint_calibration - x_zeropoint_online_calibration + carry_x;
+    int32_t y = raw_y_data16 - y_zeropoint_calibration - y_zeropoint_online_calibration + carry_y;
+
+    report.dx = x / tmag5273axial_cpi;
+    report.dy = y / tmag5273axial_cpi;
+    carry_x = x % tmag5273axial_cpi;
+    carry_y = y % tmag5273axial_cpi;
+
+    // For debugging.
+    //printf("x(r/c/a): %d %ld %d %d\n", raw_x_data16, x, report.dx, tmag5273axial_cpi);
+    //printf("y(r/c/a): %d %ld %d\n", raw_y_data16, y, report.dy);
 
     return report;
 }
