@@ -39,6 +39,8 @@
 #define PLOOPY_DRAGSCROLL_DIVISOR_H 1.0
 #define PLOOPY_DRAGSCROLL_DIVISOR_V 1.0
 #define PLOOPY_DRAGSCROLL_INVERT
+// Windows starts beeping if we send scroll events too quickly.
+#define PLOOPY_DRAGSCROLL_RATE_LIMIT 10
 
 #define SCROLL_DIRECTION_LOCK_ENABLE
 #define POINTING_DEVICE_TASK_THROTTLE_MS 2

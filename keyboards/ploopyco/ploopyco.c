@@ -167,13 +167,25 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
         scroll_accumulated_h += (float)mouse_report.x / PLOOPY_DRAGSCROLL_DIVISOR_H;
         scroll_accumulated_v += (float)mouse_report.y / PLOOPY_DRAGSCROLL_DIVISOR_V;
 
-        // Assign integer parts of accumulated scroll values to the mouse report
-        mouse_report.h = (int8_t)scroll_accumulated_h;
-#ifdef PLOOPY_DRAGSCROLL_INVERT
-        mouse_report.v = -(int8_t)scroll_accumulated_v;
-#else
-        mouse_report.v = (int8_t)scroll_accumulated_v;
+#if PLOOPY_DRAGSCROLL_RATE_LIMIT > 0
+        static uint16_t last_scroll = 0;
+        if (timer_elapsed(last_scroll) < PLOOPY_DRAGSCROLL_RATE_LIMIT) {
+            // Drop this event but keep the accumulated scroll values
+            mouse_report.x = 0;
+            mouse_report.y = 0;
+            return mouse_report;
+        }
+        last_scroll = timer_read();
 #endif
+
+        // Assign integer parts of accumulated scroll values to the mouse report
+        mouse_report.h = (mouse_hv_report_t)scroll_accumulated_h;
+#ifdef PLOOPY_DRAGSCROLL_INVERT
+        mouse_report.v = -(mouse_hv_report_t)scroll_accumulated_v;
+#else
+        mouse_report.v = (mouse_hv_report_t)scroll_accumulated_v;
+#endif
+
 #ifdef SCROLL_DIRECTION_LOCK_ENABLE
         if (scroll_direction == Unknown) {
             accumulated_scroll_v += abs(mouse_report.v);
@@ -205,8 +217,8 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
         }
 #endif
         // Update accumulated scroll values by subtracting the integer parts
-        scroll_accumulated_h -= (int8_t)scroll_accumulated_h;
-        scroll_accumulated_v -= (int8_t)scroll_accumulated_v;
+        scroll_accumulated_h -= (mouse_hv_report_t)scroll_accumulated_h;
+        scroll_accumulated_v -= (mouse_hv_report_t)scroll_accumulated_v;
 
         // Clear the X and Y values of the mouse report
         mouse_report.x = 0;
