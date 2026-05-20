@@ -164,6 +164,8 @@ report_tmag5273axial_t tmag5273axial_read(void) {
         if( y_zeropoint_online_calibration < -TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
             y_zeropoint_online_calibration = -TMAG5273AXIAL_ONLINE_CAL_THRESH;
         }
+
+        return report;
     }
 
     // Scale by configured CPI so the user has some control over the speed.
