@@ -181,6 +181,9 @@ report_tmag5273axial_t tmag5273axial_read(void) {
             if( y_zeropoint_online_calibration < -TMAG5273AXIAL_ONLINE_CAL_THRESH ) {
                 y_zeropoint_online_calibration = -TMAG5273AXIAL_ONLINE_CAL_THRESH;
             }
+
+            // Do not report movement within the deadzone
+            return report;
         }
 
         // Scaling factor arbitrary; power of 2 (cheap) and approximately correct (based on sensor ADC range).
