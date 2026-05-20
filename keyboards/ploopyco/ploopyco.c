@@ -68,6 +68,29 @@ bool  is_drag_scroll       = false;
 float scroll_accumulated_h = 0;
 float scroll_accumulated_v = 0;
 
+#ifdef SCROLL_DIRECTION_LOCK_ENABLE
+typedef enum {
+    Unknown,
+    Horizontal,
+    Vertical,
+    Any
+} ScrollDrection;
+
+ScrollDrection scroll_direction = Any;
+unsigned int accumulated_scroll_h = 0;
+unsigned int accumulated_scroll_v = 0;
+
+#define SCROLL_AXIS_THRESHOLD 50 // Lock the scroll direction if we scroll further than this in on direction
+#define SCROLL_AXIS_HYSTERESIS 25 // And no further than this in the other
+#define SCROLL_DIRECTION_TIMEOUT 500 // Unlock if we have no scrolling in the locked direction for this long
+
+void unlock_scroll(void) {
+    scroll_direction = Unknown;
+    accumulated_scroll_v = 0;
+    accumulated_scroll_h = 0;
+}
+#endif
+
 #ifdef ENCODER_ENABLE
 uint16_t lastScroll        = 0; // Previous confirmed wheel event
 uint16_t lastMidClick      = 0; // Stops scrollwheel from being read if it was pressed
@@ -144,17 +167,58 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
         scroll_accumulated_h += (float)mouse_report.x / PLOOPY_DRAGSCROLL_DIVISOR_H;
         scroll_accumulated_v += (float)mouse_report.y / PLOOPY_DRAGSCROLL_DIVISOR_V;
 
-        // Assign integer parts of accumulated scroll values to the mouse report
-        mouse_report.h = (int8_t)scroll_accumulated_h;
-#ifdef PLOOPY_DRAGSCROLL_INVERT
-        mouse_report.v = -(int8_t)scroll_accumulated_v;
-#else
-        mouse_report.v = (int8_t)scroll_accumulated_v;
+#if PLOOPY_DRAGSCROLL_RATE_LIMIT > 0
+        static uint16_t last_scroll = 0;
+        if (timer_elapsed(last_scroll) < PLOOPY_DRAGSCROLL_RATE_LIMIT) {
+            // Drop this event but keep the accumulated scroll values
+            mouse_report.x = 0;
+            mouse_report.y = 0;
+            return mouse_report;
+        }
+        last_scroll = timer_read();
 #endif
 
+        // Assign integer parts of accumulated scroll values to the mouse report
+        mouse_report.h = (mouse_hv_report_t)scroll_accumulated_h;
+#ifdef PLOOPY_DRAGSCROLL_INVERT
+        mouse_report.v = -(mouse_hv_report_t)scroll_accumulated_v;
+#else
+        mouse_report.v = (mouse_hv_report_t)scroll_accumulated_v;
+#endif
+
+#ifdef SCROLL_DIRECTION_LOCK_ENABLE
+        if (scroll_direction == Unknown) {
+            accumulated_scroll_v += abs(mouse_report.v);
+            accumulated_scroll_h += abs(mouse_report.h);
+            if (accumulated_scroll_v > SCROLL_AXIS_THRESHOLD && accumulated_scroll_h < SCROLL_AXIS_HYSTERESIS) {
+                scroll_direction = Vertical;
+            }
+            else if (accumulated_scroll_h > SCROLL_AXIS_THRESHOLD && accumulated_scroll_v < SCROLL_AXIS_HYSTERESIS) {
+                scroll_direction = Horizontal;
+            }
+            else if (accumulated_scroll_h >= SCROLL_AXIS_HYSTERESIS && accumulated_scroll_v >= SCROLL_AXIS_HYSTERESIS) {
+                scroll_direction = Any;
+            }
+        }
+        if (scroll_direction == Horizontal) {
+            mouse_report.v = 0;
+        }
+        if (scroll_direction == Vertical) {
+            mouse_report.h = 0;
+        }
+        if (scroll_direction != Unknown) {
+            static uint16_t last_event = 0;
+            if (mouse_report.h || mouse_report.v) {
+                last_event = timer_read();
+            }
+            else if (timer_elapsed(last_event) > SCROLL_DIRECTION_TIMEOUT) {
+                unlock_scroll();
+            }
+        }
+#endif
         // Update accumulated scroll values by subtracting the integer parts
-        scroll_accumulated_h -= (int8_t)scroll_accumulated_h;
-        scroll_accumulated_v -= (int8_t)scroll_accumulated_v;
+        scroll_accumulated_h -= (mouse_hv_report_t)scroll_accumulated_h;
+        scroll_accumulated_v -= (mouse_hv_report_t)scroll_accumulated_v;
 
         // Clear the X and Y values of the mouse report
         mouse_report.x = 0;
@@ -163,7 +227,12 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
         mouse_report.x = 0;
         mouse_report.y = 0;
     }
-
+#ifdef SCROLL_DIRECTION_LOCK_ENABLE
+    else if (scroll_direction != Unknown)
+    {
+        unlock_scroll();
+    }
+#endif
     return mouse_report;
 }
 
