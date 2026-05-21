@@ -28,8 +28,5 @@
                 {"matrix": [0, 3], "label":"Bottom Right", "x":3, "y":3, "w":2, "h":2}
             ]
         }
-    },
-    "dynamic_keymap": {
-        "layer_count": 3
     }
 }
