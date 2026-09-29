@@ -91,6 +91,18 @@ enum {
     LAYER_CONTROL
 };
 
+/* Send an editing shortcut (copy, paste, etc.) with the host's primary modifier:
+   CMD on MacOs and iOS, CTRL everywhere else. */
+static void tap_edit_shortcut(uint16_t keycode) {
+    os_variant_t os = detected_host_os();
+    if( os == OS_MACOS || os == OS_IOS ) {
+        tap_code16( G(keycode) );
+    }
+    else {
+        tap_code16( C(keycode) );
+    }
+}
+
 /* Override default function in submodule code so that we can blink whenever
    a successful gesture is registered. */
 void pointing_device_gestures_trigger(uint8_t direction) {
@@ -112,13 +124,13 @@ void pointing_device_gestures_trigger(uint8_t direction) {
             }
             break;
         case 1: /* South-East, Paste. */
-            tap_code16( C(KC_V) );
+            tap_edit_shortcut( KC_V );
             break;
         case 2: /* South, Copy. */
-            tap_code16( C(KC_C) );
+            tap_edit_shortcut( KC_C );
             break;
         case 3: /* South-West, Cut. */
-            tap_code16( C(KC_X) );
+            tap_edit_shortcut( KC_X );
             break;
         case 4: /* West, Previous Virtual Desktop. */
             /* On Windows, send CTRL + LGUI + LEFT. */
@@ -135,7 +147,7 @@ void pointing_device_gestures_trigger(uint8_t direction) {
             }
             break;
         case 5: /* North-West, Undo. */
-            tap_code16( C(KC_Z) );
+            tap_edit_shortcut( KC_Z );
             break;
         case 6: /* North, Play/Pause Audio. */
             tap_code16( KC_MEDIA_PLAY_PAUSE );
